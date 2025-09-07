@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Hệ Thống Rank</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #1e1e1e; color: white; }
+    h1 { text-align: center; }
+    input, button { padding: 8px; margin: 5px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #444; padding: 10px; text-align: center; }
+    th { background: #333; }
+    .reset-btn { margin-top: 10px; background: red; color: white; border: none; padding: 10px; cursor: pointer; }
+    /* Ẩn mũi tên input number */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏆 Bảng Xếp Hạng Rank</h1>
+
+  <label>👤 Tên người chơi: </label>
+  <input type="text" id="playerName" maxlength="20" placeholder="Tối đa 20 ký tự">
+  <label>📊 Điểm vừa đạt: </label>
+  <input type="text" id="scoreInput" placeholder="0-100">
+  <button onclick="updateScore()">Cập nhật điểm</button>
+  <button class="reset-btn" onclick="resetData()">Xóa dữ liệu</button>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Hạng</th>
+        <th>Tên</th>
+        <th>Điểm hiện tại</th>
+        <th>Rank</th>
+        <th>Tổng điểm</th>
+      </tr>
+    </thead>
+    <tbody id="leaderboard"></tbody>
+  </table>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+    import { getDatabase, ref, set, get, child, onValue } 
+      from "https://www.gstatic.com/firebasejs/12.2.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAY-Rwe1B2DRIB8JKcJzoQRy8RrTsx0yfI",
+      authDomain: "leaderboard-630ca.firebaseapp.com",
+      databaseURL: "https://leaderboard-630ca-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "leaderboard-630ca",
+      storageBucket: "leaderboard-630ca.firebasestorage.app",
+      messagingSenderId: "998334286692",
+      appId: "1:998334286692:web:9729de5ad0ee9c957d8871",
+      measurementId: "G-MHBC7S6FW6"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const rankThresholds = [
+      { name: "Sắt ⚙️", points: 100, color: "#555555" },
+      { name: "Đồng 🟤", points: 300, color: "#8B4513" },
+      { name: "Bạc ⚪", points: 300, color: "#C0C0C0" },
+      { name: "Vàng 🟡", points: 300, color: "#FFD700" },
+      { name: "Bạch kim 🔷", points: 500, color: "#40E0D0" },
+      { name: "Kim cương 💎", points: 750, color: "#1E90FF" },
+      { name: "Tinh anh ⚔️", points: 1000, color: "#8A2BE2" },
+      { name: "Cao thủ 🐉", points: 1500, color: "#DC143C" },
+      { name: "Đại cao thủ 🦅", points: 2000, color: "#8B0000" },
+      { name: "Chiến tướng 🔥", points: 3000, color: "#FF4500" },
+      { name: "Thiên vương 🌌", points: 5000, color: "#4B0082" }
+    ];
+
+    // ✅ Cập nhật điểm
+    async function updateScore() {
+      const name = document.getElementById("playerName").value.trim();
+      let score = parseInt(document.getElementById("scoreInput").value);
+      if (!name || isNaN(score)) return;
+
+      const snapshot = await get(child(ref(db), "players/" + name));
+      let player = snapshot.exists() ? snapshot.val() : { name, points: 0, totalPoints: 0, rankIndex: -1 };
+
+      player.points += score;
+      player.totalPoints += score;
+
+      // Xử lý thăng hạng
+      while (player.rankIndex + 1 < rankThresholds.length &&
+            player.points >= rankThresholds[player.rankIndex + 1].points) {
+        player.points -= rankThresholds[player.rankIndex + 1].points;
+        player.rankIndex++;
+      }
+
+      await set(ref(db, "players/" + name), player);
+      document.getElementById("scoreInput").value = "";
+    }
+    window.updateScore = updateScore;
+
+    // ✅ Hiển thị realtime
+    function renderLeaderboard() {
+      const playersRef = ref(db, "players");
+      onValue(playersRef, (snapshot) => {
+        const data = snapshot.val() || {};
+        let players = Object.values(data);
+
+        players.sort((a, b) => b.totalPoints - a.totalPoints);
+
+        const tbody = document.getElementById("leaderboard");
+        tbody.innerHTML = "";
+        players.forEach((p, i) => {
+          const color = (i < 10) ? "#FFD700" : (p.rankIndex === -1 ? "#222222" : rankThresholds[p.rankIndex].color);
+          const rankName = (i < 10) ? "Thách đấu 👑" : (p.rankIndex === -1 ? "Chưa có rank" : rankThresholds[p.rankIndex].name);
+
+          const row = `<tr style="background:${color}; color:white;">
+            <td>${i + 1}</td>
+            <td>${p.name}</td>
+            <td>${p.points}</td>
+            <td>${rankName}</td>
+            <td>${p.totalPoints}</td>
+          </tr>`;
+          tbody.innerHTML += row;
+        });
+      });
+    }
+    renderLeaderboard();
+
+    // ✅ Reset toàn bộ dữ liệu
+    async function resetData() {
+      if (confirm("Bạn có chắc muốn xóa toàn bộ dữ liệu không?")) {
+        await set(ref(db, "players"), {});
+      }
+    }
+    window.resetData = resetData;
+
+    // Giữ input như cũ
+    document.getElementById("scoreInput").addEventListener("input", function () {
+      let val = this.value.replace(/[^0-9]/g, "");
+      if (val === "100") { this.value = "100"; return; }
+      if (val.length > 2) val = val.slice(0, 2);
+      this.value = val;
+    });
+    document.getElementById("playerName").addEventListener("input", function () {
+      if (this.value.length > 20) this.value = this.value.slice(0, 20);
+    });
+  </script>
+</body>
+</html>
